@@ -12,40 +12,40 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 class AuthController extends Controller
 {
     public function register(Request $request): JsonResponse
-{
-    $validator = Validator::make($request->all(), [
-        'name' => 'required|string|between:2,100',
-        'email' => 'required|string|email|max:100|unique:users',
-        'password' => 'required|string|min:6',
-    ]);
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|between:2,100',
+            'email' => 'required|string|email|max:100|unique:users',
+            'password' => 'required|string|min:6',
+        ]);
 
-    if ($validator->fails()) {
-        return response()->json($validator->errors()->toJson(), 400);
+        if ($validator->fails()) {
+            return response()->json($validator->errors()->toJson(), 400);
+        }
+
+        $user = User::create(array_merge(
+            $validator->validated(),
+            ['password' => Hash::make($request->password)]
+        ));
+
+        return response()->json([
+            'message' => 'User successfully registered',
+            'user' => $user,
+        ], 201);
     }
-
-    $user = User::create(array_merge(
-        $validator->validated(),
-        ['password' => Hash::make($request->password)]
-    ));
-
-    return response()->json([
-        'message' => 'User successfully registered',
-        'user' => $user,
-    ], 201);
-}
 
     public function login(Request $request)
-{
-    $credentials = $request->only('email', 'password');
+    {
+        $credentials = $request->only('email', 'password');
 
-    if (!$token = auth()->attempt($credentials)) {
-        return response()->json(['error' => 'Unauthorized'], 401);
+        if (!$token = auth()->attempt($credentials)) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $refreshToken = $this->createRefreshToken(auth()->user());
+        
+        return $this->respondWithTokens($token, $refreshToken);
     }
-
-    $refreshToken = $this->createRefreshToken(auth()->user());
-    
-    return $this->respondWithTokens($token, $refreshToken);
-}
 
     public function logout(): JsonResponse
     {
@@ -55,7 +55,10 @@ class AuthController extends Controller
 
     public function getUser(): JsonResponse
     {
-        return response()->json(auth()->user());
+        return response()->json([
+            'message' => 'Welcome to our dashboard!',
+            'user_authenticated' => true
+        ]);
     }
 
     public function updateUser(Request $request): JsonResponse
@@ -86,40 +89,39 @@ class AuthController extends Controller
     }
 
     public function refresh()
-{
-    try {
-        $newToken = JWTAuth::parseToken()->refresh();
-        return response()->json([
-            'status' => 'success',
-            'token' => $newToken,
-            'expires_in' => JWTAuth::factory()->getTTL() * 60,
-        ]);
-    } catch (JWTException $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Failed to refresh token. Please log in again.',
-        ], 401);
+    {
+        try {
+            $newToken = JWTAuth::parseToken()->refresh();
+            return response()->json([
+                'status' => 'success',
+                'token' => $newToken,
+                'expires_in' => JWTAuth::factory()->getTTL() * 60,
+            ]);
+        } catch (JWTException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to refresh token. Please log in again.',
+            ], 401);
+        }
     }
-}
-
 
     protected function createRefreshToken($user)
-{
-    $refreshToken = JWTAuth::customClaims([
-        'exp' => now()->addDays(30)->timestamp, // 30-day expiry
-        'is_refresh_token' => true
-    ])->fromUser($user);
+    {
+        $refreshToken = JWTAuth::customClaims([
+            'exp' => now()->addDays(30)->timestamp, // 30-day expiry
+            'is_refresh_token' => true
+        ])->fromUser($user);
 
-    return $refreshToken;
-}
+        return $refreshToken;
+    }
 
-protected function respondWithTokens($token, $refreshToken)
-{
-    return response()->json([
-        'access_token' => $token,
-        'token_type' => 'bearer',
-        'expires_in' => auth()->factory()->getTTL() * 60,
-        'refresh_token' => $refreshToken
-    ]);
-}
+    protected function respondWithTokens($token, $refreshToken)
+    {
+        return response()->json([
+            'access_token' => $token,
+            'token_type' => 'bearer',
+            'expires_in' => auth()->factory()->getTTL() * 60,
+            'refresh_token' => $refreshToken
+        ]);
+    }
 }
